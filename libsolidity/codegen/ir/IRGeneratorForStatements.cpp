@@ -158,7 +158,13 @@ void IRGeneratorForStatements::generate(Block const& _block)
 {
 	try
 	{
+		if (_block.unchecked())
+			m_context.pushArithmetic(Arithmetic::Wrapping);
+
 		_block.accept(*this);
+
+		if (_block.unchecked())
+			m_context.popArithmetic();
 	}
 	catch (langutil::UnimplementedFeatureError const& _error)
 	{
@@ -613,11 +619,11 @@ void IRGeneratorForStatements::endVisit(UnaryOperation const& _unaryOperation)
 		else if (op == Token::Sub)
 		{
 			IntegerType const& intType = *dynamic_cast<IntegerType const*>(&resultType);
-			define(_unaryOperation) <<
-				m_utils.negateNumberCheckedFunction(intType) <<
-				"(" <<
-				IRVariable(_unaryOperation.subExpression()).name() <<
-				")\n";
+			define(_unaryOperation) << (
+				m_context.arithmetic() == Arithmetic::Checked ?
+				m_utils.negateNumberCheckedFunction(intType) :
+				m_utils.negateNumberWrappingFunction(intType)
+			) << "(" << IRVariable(_unaryOperation.subExpression()).name() << ")\n";
 		}
 		else
 			solUnimplementedAssert(false, "Unary operator not yet implemented");
@@ -2513,23 +2519,23 @@ string IRGeneratorForStatements::binaryOperation(
 	if (IntegerType const* type = dynamic_cast<IntegerType const*>(&_type))
 	{
 		string fun;
-		// TODO: Implement all operations for signed and unsigned types.
+		bool checked = m_context.arithmetic() == Arithmetic::Checked;
 		switch (_operator)
 		{
 			case Token::Add:
-				fun = m_utils.overflowCheckedIntAddFunction(*type);
+				fun = checked ? m_utils.overflowCheckedIntAddFunction(*type) : m_utils.wrappingIntAddFunction(*type);
 				break;
 			case Token::Sub:
-				fun = m_utils.overflowCheckedIntSubFunction(*type);
+				fun = checked ? m_utils.overflowCheckedIntSubFunction(*type) : m_utils.wrappingIntSubFunction(*type);
 				break;
 			case Token::Mul:
-				fun = m_utils.overflowCheckedIntMulFunction(*type);
+				fun = checked ? m_utils.overflowCheckedIntMulFunction(*type) : m_utils.wrappingIntMulFunction(*type);
 				break;
 			case Token::Div:
-				fun = m_utils.overflowCheckedIntDivFunction(*type);
+				fun = checked ?  m_utils.overflowCheckedIntDivFunction(*type) : m_utils.wrappingIntDivFunction(*type);
 				break;
 			case Token::Mod:
-				fun = m_utils.checkedIntModFunction(*type);
+				fun = m_utils.intModFunction(*type);
 				break;
 			case Token::BitOr:
 				fun = "or";
