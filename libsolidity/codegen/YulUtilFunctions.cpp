@@ -873,7 +873,9 @@ std::string YulUtilFunctions::resizeDynamicArrayFunction(ArrayType const& _type)
 					let arrayDataStart := <dataPosition>(array)
 					let deleteStart := add(arrayDataStart, newSlotCount)
 					let deleteEnd := add(arrayDataStart, oldSlotCount)
-					<clearStorageRange>(deleteStart, deleteEnd)
+					let offset := mul(mod(newLen, <itemsPerSlot>), <storageBytes>)
+					if gt(offset, 0) { deleteStart := sub(deleteStart, 1) }
+					<clearStorageRange>(deleteStart, offset, deleteEnd)
 				}
 			})")
 			("functionName", functionName)
@@ -883,6 +885,8 @@ std::string YulUtilFunctions::resizeDynamicArrayFunction(ArrayType const& _type)
 			("dataPosition", arrayDataAreaFunction(_type))
 			("clearStorageRange", clearStorageRangeFunction(*_type.baseType()))
 			("maxArrayLength", (u256(1) << 64).str())
+			("itemsPerSlot", to_string(32 / _type.baseType()->storageBytes()))
+			("storageBytes", to_string(_type.baseType()->storageBytes()))
 			.render();
 	});
 }
@@ -1064,11 +1068,13 @@ string YulUtilFunctions::clearStorageRangeFunction(Type const& _type)
 {
 	string functionName = "clear_storage_range_" + _type.identifier();
 
-	solAssert(_type.storageBytes() >= 32, "Expected smaller value for storage bytes");
-
 	return m_functionCollector.createFunction(functionName, [&]() {
 		return Whiskers(R"(
-			function <functionName>(start, end) {
+			function <functionName>(start, offset, end) {
+				if gt(offset, 0) {
+					let mask := <shr>(mul(8, sub(32, offset)), <ones>)
+					sstore(start, and(mask, sload(start)))
+				}
 				for {} lt(start, end) { start := add(start, <increment>) }
 				{
 					<setToZero>(start, 0)
@@ -1076,7 +1082,9 @@ string YulUtilFunctions::clearStorageRangeFunction(Type const& _type)
 			}
 		)")
 		("functionName", functionName)
-		("setToZero", storageSetToZeroFunction(_type))
+		("ones", u256(-1).str())
+		("shr", shiftRightFunctionDynamic())
+		("setToZero", storageSetToZeroFunction(_type.storageBytes() < 32 ? *TypeProvider::uint256() : _type))
 		("increment", _type.storageSize().str())
 		.render();
 	});
@@ -1103,7 +1111,7 @@ string YulUtilFunctions::clearStorageArrayFunction(ArrayType const& _type)
 				<?dynamic>
 					<resizeArray>(slot, 0)
 				<!dynamic>
-					<clearRange>(slot, add(slot, <lenToSize>(<len>)))
+					<clearRange>(slot, 0, add(slot, <lenToSize>(<len>)))
 				</dynamic>
 			}
 		)")
