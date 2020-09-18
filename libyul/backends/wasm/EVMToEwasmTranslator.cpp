@@ -806,6 +806,18 @@ function u256_to_address(x1, x2, x3, x4) -> r1, r2, r3 {
 	r3 := x4
 }
 
+function i8_store(ptr:i32, v:i64)
+{
+	let tmp := i64.and(i64.load(ptr), 0x00ffffffffffffff)
+	tmp := i64.or(tmp, i64.shl(i64.and(v, 0xff), 56))
+	i64.store(ptr, endian_swap(tmp))
+}
+
+function i8_load(ptr:i32) -> v:i64
+{
+	v := i64.and(i64.shr_u(i64.and(i64.load(ptr), 0xff00000000000000), 56), 0xff)
+}
+
 function keccak256(x1, x2, x3, x4, y1, y2, y3, y4) -> z1, z2, z3, z4 {
 	let input:i32 := u256_to_i32ptr(x1, x2, x3, x4) // 0xa0
 	let len:i64 := u256_to_i64(y1, y2, y3, y4)      // 0x00
@@ -908,7 +920,7 @@ function keccak256(x1, x2, x3, x4, y1, y2, y3, y4) -> z1, z2, z3, z4 {
 	//	for (i = 0; i < len; i++) {
 	//		c->st.b[j++] ^= ((const uint8_t *) data)[i];
 	//		if (j >= c->rsiz) {
-	//			sha3_keccakf(c->st.q);
+	//			keccakf(c->st.q);
 	//			j = 0;
 	//		}
     //	}
@@ -921,19 +933,18 @@ function keccak256(x1, x2, x3, x4, y1, y2, y3, y4) -> z1, z2, z3, z4 {
 	// 2. sha3_final
 	// -------------
 	// int i;
-	// sha3_keccakf(c->st.q);
-
+	// keccakf(c->st.q);
 	// c->st.b[c->pt] ^= 0x06; // for sha3
 	// c->st.b[c->pt] |= 0x01; // for keccak <- we want to use this.
 	let ptr:i32 := i32.add(i32.add(slot, 0x100:i32), pt)
-	i64.store(ptr, i64.or(i64.load(ptr), 0x01))
+	i8_store(ptr, i64.or(i8_load(ptr), 0x01))
 
 	// c->st.b[c->rsiz - 1] ^= 0x80;
-	ptr := i32.add(i32.add(slot, 0x100:i32), rsiz)
-	i64.store(ptr, i64.xor(i64.load(i32.sub(ptr,1:i32)), 0x80))
+	ptr         := i32.add(i32.add(slot, 0x100:i32), i32.sub(rsiz, 1:i32))
+	i8_store(ptr, i64.xor(i8_load(ptr), 0x80))
 
-	// sha3_keccakf(c->st.q);
-	sha3_keccakf(slot)
+	// keccakf(c->st.q);
+	keccakf(slot)
 
 	// for (i = 0; i < c->mdlen; i++)
 	//   ((uint8_t *) md)[i] = c->st.b[i];
@@ -945,16 +956,16 @@ function rotl64(x, y) -> z {
 	z := i64.or(i64.shl(x, y), i64.shr_u(x, i64.sub(64:i64, y)))
 }
 
-function sha3_keccakf(slot:i32) {
+function keccakf(slot:i32) {
 	// use same memory layout as defined in keccak256 function
 	// slot[0x000..0x100] for constants
 	// slot[0x100..0x200] for state
 
 	let bc_0:i32 := i32.add(slot, 0x1E0:i32) // bc[0]:i64
-	let bc_1:i32 := i32.add(slot, 0x1E1:i32) // bc[1]:i64
-	let bc_2:i32 := i32.add(slot, 0x1E2:i32) // bc[2]:i64
-	let bc_3:i32 := i32.add(slot, 0x1E3:i32) // bc[3]:i64
-	let bc_4:i32 := i32.add(slot, 0x1E4:i32) // bc[4]:i64
+	let bc_1:i32 := i32.add(slot, 0x1E8:i32) // bc[1]:i64
+	let bc_2:i32 := i32.add(slot, 0x1F0:i32) // bc[2]:i64
+	let bc_3:i32 := i32.add(slot, 0x1F8:i32) // bc[3]:i64
+	let bc_4:i32 := i32.add(slot, 0x200:i32) // bc[4]:i64
 
 	for { let r:i32 := 0:i32 } i32.lt_u(r, 24:i32) { r := i32.add(r, 1:i32) }
 	{
@@ -964,116 +975,126 @@ function sha3_keccakf(slot:i32) {
 		//
 		// bc[0] = st[0x0] ^ st[0x5] ^ st[0xa] ^ st[0xf] ^ st[0x14];
 		i64.store(bc_0, i64.xor(i64.load(i32.add(0x100:i32, slot)),
-						i64.xor(i64.load(i32.add(0x105:i32, slot)),
-						i64.xor(i64.load(i32.add(0x10A:i32, slot)),
-						i64.xor(i64.load(i32.add(0x10F:i32, slot)),
-								i64.load(i32.add(0x114:i32, slot)))))))
+						i64.xor(i64.load(i32.add(0x128:i32, slot)),
+						i64.xor(i64.load(i32.add(0x150:i32, slot)),
+						i64.xor(i64.load(i32.add(0x178:i32, slot)),
+								i64.load(i32.add(0x1a0:i32, slot)))))))
 		// bc[1] = st[0x1] ^ st[0x6] ^ st[0xb] ^ st[0x10] ^ st[0x15];
-		i64.store(bc_1, i64.xor(i64.load(i32.add(0x101:i32, slot)),
-						i64.xor(i64.load(i32.add(0x106:i32, slot)),
-						i64.xor(i64.load(i32.add(0x10B:i32, slot)),
-						i64.xor(i64.load(i32.add(0x110:i32, slot)),
-								i64.load(i32.add(0x115:i32, slot)))))))
+		i64.store(bc_1, i64.xor(i64.load(i32.add(0x108:i32, slot)),
+						i64.xor(i64.load(i32.add(0x130:i32, slot)),
+						i64.xor(i64.load(i32.add(0x158:i32, slot)),
+						i64.xor(i64.load(i32.add(0x180:i32, slot)),
+								i64.load(i32.add(0x1a8:i32, slot)))))))
 		// bc[2] = st[0x2] ^ st[0x7] ^ st[0xc] ^ st[0x11] ^ st[0x16];
-		i64.store(bc_2, i64.xor(i64.load(i32.add(0x102:i32, slot)),
-						i64.xor(i64.load(i32.add(0x107:i32, slot)),
-						i64.xor(i64.load(i32.add(0x10C:i32, slot)),
-						i64.xor(i64.load(i32.add(0x111:i32, slot)),
-								i64.load(i32.add(0x116:i32, slot)))))))
-		// bc[3] = st[0x3] ^ st[0x8] ^ st[0xd] ^ st[0x12] ^ st[0x117];
-		i64.store(bc_3, i64.xor(i64.load(i32.add(0x103:i32, slot)),
-						i64.xor(i64.load(i32.add(0x108:i32, slot)),
-						i64.xor(i64.load(i32.add(0x10D:i32, slot)),
-						i64.xor(i64.load(i32.add(0x112:i32, slot)),
-								i64.load(i32.add(0x117:i32, slot)))))))
+		i64.store(bc_2, i64.xor(i64.load(i32.add(0x110:i32, slot)),
+						i64.xor(i64.load(i32.add(0x138:i32, slot)),
+						i64.xor(i64.load(i32.add(0x160:i32, slot)),
+						i64.xor(i64.load(i32.add(0x188:i32, slot)),
+								i64.load(i32.add(0x1b0:i32, slot)))))))
+		// bc[3] = st[0x3] ^ st[0x8] ^ st[0xd] ^ st[0x12] ^ st[0x17];
+		i64.store(bc_3, i64.xor(i64.load(i32.add(0x118:i32, slot)),
+						i64.xor(i64.load(i32.add(0x140:i32, slot)),
+						i64.xor(i64.load(i32.add(0x168:i32, slot)),
+						i64.xor(i64.load(i32.add(0x190:i32, slot)),
+								i64.load(i32.add(0x1b8:i32, slot)))))))
 		// bc[4] = st[0x4] ^ st[0x9] ^ st[0xe] ^ st[0x13] ^ st[0x18];
-		i64.store(bc_4, i64.xor(i64.load(i32.add(0x104:i32, slot)),
-						i64.xor(i64.load(i32.add(0x109:i32, slot)),
-						i64.xor(i64.load(i32.add(0x10E:i32, slot)),
-						i64.xor(i64.load(i32.add(0x113:i32, slot)),
-								i64.load(i32.add(0x118:i32, slot)))))))
-
-		debug.print64(i64.load(bc_0))
-		debug.print64(i64.load(bc_1))
-		debug.print64(i64.load(bc_2))
-		debug.print64(i64.load(bc_3))
-		debug.print64(i64.load(bc_4))
+		i64.store(bc_4, i64.xor(i64.load(i32.add(0x120:i32, slot)),
+						i64.xor(i64.load(i32.add(0x148:i32, slot)),
+						i64.xor(i64.load(i32.add(0x170:i32, slot)),
+						i64.xor(i64.load(i32.add(0x198:i32, slot)),
+								i64.load(i32.add(0x1C0:i32, slot)))))))
 
 		//  for (i = 0; i < 5; i++) {
 		//    t = bc[(i + 4) % 5] ^ ROTL64(bc[(i + 1) % 5], 1);
 		//    for (j = 0; j < 25; j += 5)
 		//      st[j + i] ^= t;
 		//  }
-		// t_0 = bc[4] ^ ROTL64(bc[0], 1)
-		let t_0 := i64.xor(i64.load(bc_4), rotl64(i64.load(bc_0), 1:i64))
-		// t_1 = bc[0] ^ ROTL64(bc[1], 1)
-		let t_1 := i64.xor(i64.load(bc_0), rotl64(i64.load(bc_1), 1:i64))
-		// t_2 = bc[1] ^ ROTL64(bc[2], 1)
-		let t_2 := i64.xor(i64.load(bc_1), rotl64(i64.load(bc_2), 1:i64))
-		// t_3 = bc[2] ^ ROTL64(bc[3], 1)
-		let t_3 := i64.xor(i64.load(bc_2), rotl64(i64.load(bc_3), 1:i64))
-		// t_4 = bc[3] ^ ROTL64(bc[4], 1)
-		let t_4 := i64.xor(i64.load(bc_3), rotl64(i64.load(bc_4), 1:i64))
+		// t_0 = bc[4] ^ ROTL64(bc[1], 1)
+		let t_0 := i64.xor(i64.load(bc_4), rotl64(i64.load(bc_1), 1:i64))
+		// t_1 = bc[0] ^ ROTL64(bc[2], 1)
+		let t_1 := i64.xor(i64.load(bc_0), rotl64(i64.load(bc_2), 1:i64))
+		// t_2 = bc[1] ^ ROTL64(bc[3], 1)
+		let t_2 := i64.xor(i64.load(bc_1), rotl64(i64.load(bc_3), 1:i64))
+		// t_3 = bc[2] ^ ROTL64(bc[4], 1)
+		let t_3 := i64.xor(i64.load(bc_2), rotl64(i64.load(bc_4), 1:i64))
+		// t_4 = bc[3] ^ ROTL64(bc[0], 1)
+		let t_4 := i64.xor(i64.load(bc_3), rotl64(i64.load(bc_0), 1:i64))
 
 		// st[0] ^= t_0
 		// st[1] ^= t_1
 		// st[2] ^= t_2
 		// st[3] ^= t_3
 		mstore_internal(i32.add(slot, 0x100:i32),
-			i64.xor(i64.load(i32.add(0x100:i32, slot)), t_0),
-			i64.xor(i64.load(i32.add(0x108:i32, slot)), t_1),
-			i64.xor(i64.load(i32.add(0x110:i32, slot)), t_2),
-			i64.xor(i64.load(i32.add(0x118:i32, slot)), t_3))
+			endian_swap(i64.xor(i64.load(i32.add(0x100:i32, slot)), t_0)),
+			endian_swap(i64.xor(i64.load(i32.add(0x108:i32, slot)), t_1)),
+			endian_swap(i64.xor(i64.load(i32.add(0x110:i32, slot)), t_2)),
+			endian_swap(i64.xor(i64.load(i32.add(0x118:i32, slot)), t_3)))
+
 		// st[4] ^= t_4
 		// st[5] ^= t_0
 		// st[6] ^= t_1
 		// st[7] ^= t_2
 		mstore_internal(i32.add(slot, 0x120:i32),
-			i64.xor(i64.load(i32.add(0x120:i32, slot)), t_4),
-			i64.xor(i64.load(i32.add(0x128:i32, slot)), t_0),
-			i64.xor(i64.load(i32.add(0x130:i32, slot)), t_1),
-			i64.xor(i64.load(i32.add(0x138:i32, slot)), t_2))
+			endian_swap(i64.xor(i64.load(i32.add(0x120:i32, slot)), t_4)),
+			endian_swap(i64.xor(i64.load(i32.add(0x128:i32, slot)), t_0)),
+			endian_swap(i64.xor(i64.load(i32.add(0x130:i32, slot)), t_1)),
+			endian_swap(i64.xor(i64.load(i32.add(0x138:i32, slot)), t_2)))
+
 		// st[8] ^= t_3
 		// st[9] ^= t_4
 		// st[a] ^= t_0
 		// st[b] ^= t_1
 		mstore_internal(i32.add(slot, 0x140:i32),
-			i64.xor(i64.load(i32.add(0x140:i32, slot)), t_3),
-			i64.xor(i64.load(i32.add(0x148:i32, slot)), t_4),
-			i64.xor(i64.load(i32.add(0x150:i32, slot)), t_0),
-			i64.xor(i64.load(i32.add(0x158:i32, slot)), t_1))
+			endian_swap(i64.xor(i64.load(i32.add(0x140:i32, slot)), t_3)),
+			endian_swap(i64.xor(i64.load(i32.add(0x148:i32, slot)), t_4)),
+			endian_swap(i64.xor(i64.load(i32.add(0x150:i32, slot)), t_0)),
+			endian_swap(i64.xor(i64.load(i32.add(0x158:i32, slot)), t_1)))
 		// st[c] ^= t_2
 		// st[d] ^= t_3
 		// st[e] ^= t_4
 		// st[f] ^= t_0
 		mstore_internal(i32.add(slot, 0x160:i32),
-			i64.xor(i64.load(i32.add(0x160:i32, slot)), t_2),
-			i64.xor(i64.load(i32.add(0x168:i32, slot)), t_3),
-			i64.xor(i64.load(i32.add(0x170:i32, slot)), t_4),
-			i64.xor(i64.load(i32.add(0x178:i32, slot)), t_0))
+			endian_swap(i64.xor(i64.load(i32.add(0x160:i32, slot)), t_2)),
+			endian_swap(i64.xor(i64.load(i32.add(0x168:i32, slot)), t_3)),
+			endian_swap(i64.xor(i64.load(i32.add(0x170:i32, slot)), t_4)),
+			endian_swap(i64.xor(i64.load(i32.add(0x178:i32, slot)), t_0)))
 		// st[10] ^= t_1
 		// st[11] ^= t_2
 		// st[12] ^= t_3
 		// st[13] ^= t_4
 		mstore_internal(i32.add(slot, 0x180:i32),
-			i64.xor(i64.load(i32.add(0x180:i32, slot)), t_1),
-			i64.xor(i64.load(i32.add(0x188:i32, slot)), t_2),
-			i64.xor(i64.load(i32.add(0x190:i32, slot)), t_3),
-			i64.xor(i64.load(i32.add(0x198:i32, slot)), t_4))
+			endian_swap(i64.xor(i64.load(i32.add(0x180:i32, slot)), t_1)),
+			endian_swap(i64.xor(i64.load(i32.add(0x188:i32, slot)), t_2)),
+			endian_swap(i64.xor(i64.load(i32.add(0x190:i32, slot)), t_3)),
+			endian_swap(i64.xor(i64.load(i32.add(0x198:i32, slot)), t_4)))
 		// st[14] ^= t_0
 		// st[15] ^= t_1
 		// st[16] ^= t_2
 		// st[17] ^= t_3
 		mstore_internal(i32.add(slot, 0x1A0:i32),
-			i64.xor(i64.load(i32.add(0x1A0:i32, slot)), t_0),
-			i64.xor(i64.load(i32.add(0x1A8:i32, slot)), t_1),
-			i64.xor(i64.load(i32.add(0x1B0:i32, slot)), t_2),
-			i64.xor(i64.load(i32.add(0x1B8:i32, slot)), t_3))
+			endian_swap(i64.xor(i64.load(i32.add(0x1A0:i32, slot)), t_0)),
+			endian_swap(i64.xor(i64.load(i32.add(0x1A8:i32, slot)), t_1)),
+			endian_swap(i64.xor(i64.load(i32.add(0x1B0:i32, slot)), t_2)),
+			endian_swap(i64.xor(i64.load(i32.add(0x1B8:i32, slot)), t_3)))
 		// st[18] ^= t_4
 		mstore_internal(i32.add(slot, 0x1C0:i32),
-			i64.xor(i64.load(i32.add(0x1C0:i32, slot)), t_4), 0x00, 0x00, 0x00)
+			endian_swap(i64.xor(i64.load(i32.add(0x1C0:i32, slot)), t_4)), 0x00, 0x00, 0x00)
 
-//		debug.print64(i64.load(i32.add(0x1C0:i32, slot)))
+		// Rho Pi
+		// t = st[1];
+		// for (i = 0; i < 24; i++)
+		// {
+		//   j = keccakf_piln[i];
+		//   bc[0] = st[j];
+		//   st[j] = ROTL64(t, keccakf_rotc[i]);
+		//   t = bc[0];
+		// }
+		let t := i64.load(i32.add(0x108:i32, slot))
+		for { let i:i32 := 0:i32 } i32.lt_u(i, 24:i32) { i := i32.add(i, 1:i32) }
+		{
+			let j := i8_load(i32.add(i32.add(slot, 0xD9:i32), i))
+			debug.print64(j)
+		}
 	}
 }
 
