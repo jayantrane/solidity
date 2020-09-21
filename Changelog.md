@@ -24,6 +24,7 @@ Bugfixes:
  * Type system: Fix internal error on implicit conversion of contract instance to the type of its ``super``.
  * Type system: Fix internal error on implicit conversion of string literal to a calldata string.
  * Type system: Fix named parameters in overloaded function and event calls being matched incorrectly if the order differs from the declaration.
+ * Code generator: Implemented events with function type as one of its indexed parameters.
 
 ### 0.7.1 (2020-09-02)
 
