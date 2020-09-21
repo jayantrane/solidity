@@ -253,12 +253,35 @@ bytes lebEncode(uint64_t _n)
 
 bytes lebEncodeSigned(int64_t _n)
 {
-	if (_n >= 0 && _n < 0x40)
-		return toBytes(uint8_t(uint64_t(_n) & 0xff));
-	else if (-_n > 0 && -_n < 0x40)
-		return toBytes(uint8_t(uint64_t(_n + 0x80) & 0xff));
-	else
-		return toBytes(uint8_t(0x80 | uint8_t(_n & 0x7f))) + lebEncodeSigned(_n / 0x80);
+	bytes result;
+
+	bool More;
+	unsigned Count = 0;
+	unsigned PadTo = 0;
+
+	do {
+		uint8_t Byte = _n & 0x7f;
+		// NOTE: this assumes that this signed shift is an arithmetic right shift.
+		_n >>= 7;
+		More = !((((_n == 0 ) && ((Byte & 0x40) == 0)) ||
+			((_n == -1) && ((Byte & 0x40) != 0))));
+		Count++;
+		if (More || Count < PadTo)
+			Byte |= 0x80; // Mark this byte to show that more bytes will follow.
+
+		result.emplace_back(Byte);
+	} while (More);
+
+	// Pad with 0x80 and emit a terminating byte at the end.
+	if (Count < PadTo) {
+		uint8_t PadValue = _n < 0 ? 0x7f : 0x00;
+		for (; Count < PadTo - 1; ++Count)
+			result.emplace_back(char(PadValue | 0x80));
+		result.emplace_back(char(PadValue));
+		Count++;
+	}
+
+	return result;
 }
 
 bytes prefixSize(bytes _data)
