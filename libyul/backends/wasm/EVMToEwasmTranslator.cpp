@@ -1141,10 +1141,10 @@ function keccakf(slot:i32) {
 
 		//  Iota
 		//  st[0] ^= keccakf_rndc[r];
-//		let st_0:i32 := i32.add(0x100:i32, slot)
-//		let keccakf_rndc_r:i32 := i32.add(slot, i32.mul(8:i32, r))
-//		debug.print64(i64.load(keccakf_rndc_r))
-//		i64.store(st_0, i64.xor(endian_swap(i64.load(st_0)), i64.load(keccakf_rndc_r)))
+		let st_0:i32 := i32.add(0x100:i32, slot)
+		let keccakf_rndc_r:i32 := i32.add(slot, i32.mul(8:i32, r))
+		debug.print64(i64.load(keccakf_rndc_r))
+		i64.store(st_0, i64.xor(i64.load(st_0), i64.load(keccakf_rndc_r)))
 	}
 }
 
