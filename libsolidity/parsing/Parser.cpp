@@ -111,7 +111,21 @@ ASTPointer<SourceUnit> Parser::parse(shared_ptr<Scanner> const& _scanner)
 				nodes.push_back(parseFunctionDefinition(true));
 				break;
 			default:
-				fatalParserError(7858_error, "Expected pragma, import directive or contract/interface/library/struct/enum/function definition.");
+				if (
+					m_scanner->currentToken() == Token::Identifier ||
+					m_scanner->currentToken() == Token::Mapping ||
+					TokenTraits::isElementaryTypeName(m_scanner->currentToken()) ||
+					(m_scanner->currentToken() == Token::Function && m_scanner->peekNextToken() == Token::LParen)
+				)
+				{
+					VarDeclParserOptions options;
+					options.isStateVariable = true;
+					options.allowInitialValue = true;
+					nodes.push_back(parseVariableDeclaration(options));
+					expectToken(Token::Semicolon);
+				}
+				else
+					fatalParserError(7858_error, "Expected pragma, import directive or contract/interface/library/struct/enum/constant/function definition.");
 			}
 		}
 		solAssert(m_recursionDepth == 0, "");
