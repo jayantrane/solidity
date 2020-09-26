@@ -23,4 +23,3 @@ contract LoopFor2 {
 // ----
 // Warning 6328: (320-339): CHC: Assertion violation happens here.
 // Warning 6328: (343-362): CHC: Assertion violation happens here.
-// Warning 4661: (296-316): BMC: Assertion violation happens here.
